@@ -1,0 +1,39 @@
+#These were used when I was trying to map between controllers
+#To map to a wheel - but was defeteaded in that by using a driver
+
+GAMEPAD_TRIANGLE =  (0,0X08)
+GAMEPAD_CIRCLE =   (0,0x04)
+GAMEPAD_CROSS = (0,0x02)
+GAMEPAD_SQUARE = (0,0x01)
+
+GAMEPAD_DPAD_MASK = 0x0F
+GAMEPAD_DPAD_NONE = (2,0x0F)
+GAMEPAD_DPAD_U = (2,0x00)
+GAMEPAD_DPAD_R = (2,0x02)
+GAMEPAD_DPAD_D = (2,0x04)
+GAMEPAD_DPAD_L = (2,0x06) 
+
+
+GAMEPAD_PSMENU = (1,0x10)
+GAMEPAD_SELECT = (1,0x01)
+GAMEPAD_START = (1,0x02)
+
+GAMEPAD_LJOY_BUTTON = (1,0x04)
+GAMEPAD_RJOY_BUTTON = (1,0x08)
+GAMEPAD_L1 = (0,0x10)
+GAMEPAD_R1 = (0,0x20)
+GAMEPAD_L2 = (0,0x40)
+GAMEPAD_R2 = (0,0x80)
+
+#These are Bytes not Bits
+
+GAMEPAD_LJOY_X = 3
+GAMEPAD_LJOY_Y = 4
+GAMEPAD_RJOY_X = 5
+GAMEPAD_RJOY_Y = 6
+
+CLICKER_BUTTONS = 2
+CLICKER_LEFT=  [0x4b]
+CLICKER_RIGHT = [0x4e]
+CLICKER_UP = [0x05]
+CLICKER_DOWN = [0x3e,0x29] #Toggles
