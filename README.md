@@ -5,7 +5,7 @@ There will be a blog to go with this but I neeed somewhere to put the code anywa
 
 
 
-This code uses a Raspberry Pi 4 to intercept the signal from a PS£ controller to the PS3.
+This code uses a Raspberry Pi 4 to intercept the signal from a wired PS3  controller (copy) to the PS3.
 It then modifies that signal based on some i2c sensors ( Light level and Compass) and also
 a USB Presentation clicker to allow you to control games, specifically Test Drive 2 Unlimited
 with a Bicycle in a Turbo Trainer.
