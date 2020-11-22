@@ -8,33 +8,31 @@ cd /sys/kernel/config/usb_gadget/
 mkdir -p xac_joystick
 cd xac_joystick
 
-sudo su
-
 # Define USB specification
-echo 0x1d6b > idVendor # Linux Foundation
-echo 0x0104 > idProduct # Multifunction Composite Joystick Gadget
-echo 0x0100 > bcdDevice # v1.0.0
+echo 0x046d > idVendor # Linux Foundation
+echo 0xc29a > idProduct # Multifunction Composite Joystick Gadget
+echo 1322 > bcdDevice # v1.0.0
 echo 0x0200 > bcdUSB # USB2
-echo 0x02 > bDeviceClass
+echo 0x00 > bDeviceClass
 echo 0x00 > bDeviceSubClass
 echo 0x00 > bDeviceProtocol
 
 # Perform localization
 mkdir -p strings/0x409
 
-echo "0123456789" > strings/0x409/serialnumber
-echo "Raspberry Pi" > strings/0x409/manufacturer
-echo "XAC Virtual Joystick" > strings/0x409/product
+echo "0000000000" > strings/0x409/serialnumber
+echo "Sony Inc" > strings/0x409/manufacturer
+echo "Driving Force GT" > strings/0x409/product
 
 
 # Define the functions of the device
 mkdir functions/hid.usb0
 echo 0 > functions/hid.usb0/protocol
 echo 0 > functions/hid.usb0/subclass
-echo 27 > functions/hid.usb0/report_length
+echo 8 > functions/hid.usb0/report_length
 
 # Write report descriptor ( X and Y analog joysticks plus 8 buttons )
-echo "05010905A10115002501350045017501950D05091901290D81029503810105012507463B017504950165140939814265009501810126FF0046FF0009300931093209357508950481020600FF0920092109220923092409250926092709280929092A092B950C81020A21269508B1020A2126910226FF0346FF03092C092D092E092F751095048102C0" | xxd -r -ps > functions/hid.usb0/report_desc
+echo "05010904A101150025073500463B01651409397504950181426500250145010509190129157501951581020600FF09019507810226FF3F46FF3F750E9501050109308102250145010600FF090175019502810226FF0046FF000501093109327508810295070600FF0902910295830903B102C0" | xxd -r -ps > functions/hid.usb0/report_desc
 
 
 # Create configuration file
@@ -43,12 +41,12 @@ mkdir configs/c.1/strings/0x409
 
 echo 0x80 > configs/c.1/bmAttributes
 echo 100 > configs/c.1/MaxPower # 100 mA
-echo "XAC configuration" > configs/c.1/strings/0x409/configuration
+echo "Wheel" > configs/c.1/strings/0x409/configuration
 
 # Link the configuration file
 ln -s functions/hid.usb0 configs/c.1
 
 # Activate device 
-sudo ls /sys/class/udc > UDC
+ls /sys/class/udc > UDC
 
 sleep 10
