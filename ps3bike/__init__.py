@@ -22,7 +22,7 @@ import hid
 import py_qmc5883l
 import ps3bike.controlmapbits as cmb 
 import logging
-
+import ps3bike.webui as webui
 
 
 GAMEPAD_VID = 0x11C0
@@ -43,8 +43,8 @@ POWER_DOWN = 0x00  # No active state
 POWER_ON = 0x01  # Power on
 RESET = 0x07  # Reset data register value
 
-SPEED_CALIBRATION = 10
-SPEED_OFFSET = 40
+DEFAULT_SPEED_CALIBRATION = 9
+DEFAULT_SPEED_OFFSET = 40
 MEANBUFLEN=2
 
 #DUTY_CYCLE=25
@@ -64,10 +64,14 @@ class PS3Bike(object):
 
 
     def _apply_acceleration(self,loops,speed_mean):
+        #Do not do this in XMB
+        if self.in_xmb.value == True:
+            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0x80
+            return
 
-        pedal_press = 0xFF - speed_mean * SPEED_CALIBRATION
+        pedal_press = 0xFF - speed_mean * self.speed_calibration.value
         if speed_mean > 1:
-            pedal_press=pedal_press - SPEED_OFFSET
+            pedal_press=pedal_press - self.speed_offset.value
 
         if pedal_press < 0:
             pedal_pesss = 0
@@ -111,6 +115,14 @@ class PS3Bike(object):
         except Exception as e:
             raise Exception("""Unable to open virtual Joystick - have you created it
                 and is this running with permissions to write to it?""" + str(e))
+
+
+        
+        self.in_xmb = multiprocessing.Value('b',True)
+        self.speed_calibration = multiprocessing.Value('i')
+        self.speed_offset = multiprocessing.Value('i')
+        self.speed_calibration.value = DEFAULT_SPEED_CALIBRATION
+        self.speed_offset.value = DEFAULT_SPEED_OFFSET
 
         self.compass = None
         self.forwards = None
@@ -230,6 +242,10 @@ class PS3Bike(object):
          
         if clicker_data :
             self.braking = False
+            if self.in_xmb.value == True:
+                self.in_xmb.value = False
+                return
+
             byte = clicker_data[cmb.CLICKER_BUTTONS]
             if byte in cmb.CLICKER_UP:
                 return self._into_first_gear()
@@ -271,19 +287,21 @@ class PS3Bike(object):
                 self.wheel_data[mapping[1][0]] &= ~cmb.WHEEL_DPAD_MASK
                 self.wheel_data[mapping[1][0]] |= mapping[1][1]
 
-        for mapping in cmb.BUTTON_MAPPINGS:
+        if self.in_xmb.value:
+            mappings = cmb.XMB_BUTTON_MAPPINGS
+        else:
+            mappings = cmb.BUTTON_MAPPINGS
+
+        for mapping in mappings:
             if self.gamepad_data[mapping[0][0]] & mapping[0][1] :
                 self.wheel_data[mapping[1][0]] |= mapping[1][1]
         
         #Override Brake and Accelrate with L2/R2
         if self.gamepad_data[cmb.GAMEPAD_L2[0]] &  cmb.GAMEPAD_L2[1]:
-
-            logging.info(hex(self.gamepad_data[cmb.GAMEPAD_LTRIGGER]))
             self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0xFF -  self.gamepad_data[cmb.GAMEPAD_LTRIGGER]
 
         
         if self.gamepad_data[cmb.GAMEPAD_R2[0]] &  cmb.GAMEPAD_R2[1]:
-            logging.info(hex(self.gamepad_data[cmb.GAMEPAD_RTRIGGER]))
             self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0xFF -  self.gamepad_data[cmb.GAMEPAD_RTRIGGER]
         
 
@@ -300,19 +318,30 @@ class PS3Bike(object):
         self.wheel_data[cmb.WHEEL_WHEEL_LOWBYTE] = wheel_value % 256
     
     def _apply_brake(self):
+        if self.braking:
+            self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0x00
+            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0xFF
+        else:            
             self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0xFF
+        self.braking=False
+
 
     def start_controller(self):
         start_time = time.time()
         loops = 0
         loopssinceclick=0
 
-        speed_mean = multiprocessing.Value('f')
-        steering_angle = multiprocessing.Value('f')
+        shared_speed_mean = multiprocessing.Value('f')
+        shared_steering_angle = multiprocessing.Value('f')
 
-        self.listener = multiprocessing.Process(target=self.sensor_loop,args=(speed_mean,steering_angle))
+        self.listener = multiprocessing.Process(target=self.sensor_loop,args=(shared_speed_mean,shared_steering_angle))
         self.listener.daemon=True
         self.listener.start()
+
+        self.ui = multiprocessing.Process(target=webui.start_ui,args=(shared_speed_mean,shared_steering_angle,self.speed_offset,self.speed_calibration))
+        self.ui.daemon = True
+        self.ui.start()
+
         while True:
             time.sleep(0.02)
             self.wheel_data = bytearray(cmb.WHEEL_NEUTRAL)
@@ -331,10 +360,10 @@ class PS3Bike(object):
                 #logging.info(f"Speed: {int(speed_mean.value)} Loop: {int(hz)}  Angle: {steering_angle.value} " )
                 
                 #Joystick overrides Bike for steering so use if it's neutral
-                if self.gamepad_data[cmb.GAMEPAD_LJOY_X] == 0x80:
-                    self._set_steering(steering_angle.value)
+                if self.gamepad_data[cmb.GAMEPAD_LJOY_X] > 0x78 and self.gamepad_data[cmb.GAMEPAD_LJOY_X] < 0x88  :
+                    self._set_steering(shared_steering_angle.value)
 
-                self._apply_acceleration(loops,int(speed_mean.value))            
+                self._apply_acceleration(loops,int(shared_speed_mean.value))            
                 self._apply_brake()
                 self._map_pad_to_wheel() #Gamepad has priority
                 self._parse_clicker_data(clicker_data)
