@@ -1,9 +1,9 @@
 # ps3bike
 A Playstation Controller which is also smart bike trainer.
 
-There will be a blog to go with this but I neeed somewhere to put the code anyway. This isn't intended to just clone and use as it's quite specialised to my equipment and needs.
+There may be a blog to go with this but I neeed somewhere to put the code anyway. This isn't intended to just clone and use as it's quite specialised to my equipment and needs.
 
-
+I finally got not just controller emulation but the wheel too, hooray.
 
 This code uses a Raspberry Pi 4 to intercept the signal from a wired PS3  controller (copy) to the PS3.
 It then modifies that signal based on some i2c sensors ( Light level and Compass) and also
@@ -27,10 +27,7 @@ And a projector, bike and turbo/stationary trainer
 
 -----------
 
-Notes
-
-N.B I tried to emulate my Logitech wheel as well but that didn't work because .. Reasons
-
+No
 lsusb
 
 Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub Bus 001 Device 007: ID 11c0:5503 Betop Bus 001 Device 006: ID 046d:c29a Logitech, Inc. Bus 001 Device 003: ID 1d57:ad03 Xenta Bus 001 Device 002: ID 2109:3431 VIA Labs, Inc. Hub Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
