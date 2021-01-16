@@ -13,7 +13,7 @@ __author__ = "John Page"
 __copyright__ = "Copyright 2020 John Page <johnlpage@gmail.com>"
 __license__ = "GPLv3-or-later"
 __email__ = "johnlpage@gmail.com"
-__version__ = "0.0.1"
+__version__ = "1.1"
 
 import multiprocessing
 import smbus
@@ -23,7 +23,14 @@ import py_qmc5883l
 import ps3bike.controlmapbits as cmb 
 import logging
 import ps3bike.webui as webui
+import socket 
 
+from struct import *
+from pprint import pprint
+
+
+CREW_TELEMETRY_IP = "0.0.0.0"
+CREW_TELEMETRY_PORT = 5005
 
 GAMEPAD_VID = 0x11C0
 GAMEPAD_DID = 0x5503
@@ -47,34 +54,39 @@ DEFAULT_SPEED_CALIBRATION = 9
 DEFAULT_SPEED_OFFSET = 40
 MEANBUFLEN=2
 
-#DUTY_CYCLE=25
-#PCM_MAPPING = [ 0,4, 4,4,4,5,5,5,6,6,6,7,8,9,10,11,12]
 
 class PS3Bike(object):
     
-    #Lookup table for how much of each DUTY CYCLE (0.5s) to keep the button down for
-    #Used before I got the wheel working
-    #def _apply_acceleration(self,loops,speed_mean):
-    #    if speed_mean > len(PCM_MAPPING) - 1:
-    #        speed_mean = len(PCM_MAPPING) - 1
-
-    #    if float(loops % DUTY_CYCLE) < PCM_MAPPING[speed_mean] :
-    #            self.gamepad_data[cmb.GAMEPAD_R2[0]] |=  cmb.GAMEPAD_R2[1]
-
-
 
     def _apply_acceleration(self,loops,speed_mean):
         #Do not do this in XMB
-        if self.in_xmb.value == True:
-            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0x80
-            return
 
-        pedal_press = 0xFF - speed_mean * self.speed_calibration.value
+        pedal_press = speed_mean * self.speed_calibration.value
         if speed_mean > 1:
-            pedal_press=pedal_press - self.speed_offset.value
+            pedal_press=pedal_press + self.speed_offset.value
 
-        if pedal_press < 0:
-            pedal_pesss = 0
+        #If we have a none zero game speed then let's try to calibrate it
+        if self.crew_target_speed != None and self.crew_target_speed >= 0: 
+            if self.new_telemetry:
+                logging.info(f"Mean Speed: {speed_mean} Game Speed: {self.crew_target_speed} {int(self.auto_pedal)}")
+                diff = abs(self.crew_target_speed - speed_mean)
+                if speed_mean > self.crew_target_speed-3 and speed_mean > 0:
+                    self.auto_pedal += 3
+                else:
+                    self.auto_pedal -= 3
+
+                if self.auto_pedal <0:
+                    self.auto_pedal = 0
+                if self.auto_pedal > 0x7F:
+                    self.auto_pedal = 0x7F
+
+                self.new_telemetry = False
+ 
+            pedal_press = int(self.auto_pedal + 128)
+
+
+        if pedal_press >  0xFF:
+            pedal_pesss = 0xFF
         self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = pedal_press
         
 
@@ -91,11 +103,13 @@ class PS3Bike(object):
         self.lastturn = time.time()
         self.turnbuffer = []
         self.speedmean = 0
+        self.auto_pedal=0
         self.old_clicker_data = None
         self.wheel_data = bytearray(cmb.WHEEL_NEUTRAL)
-
+        self.crew_target_speed = None
         self.gamepad = hid.device()
         self.braking = False
+        self.new_telemetry = False
         self.clicker  = hid.device()
         try:
             logging.info("Opening PS Gamepad") 
@@ -118,19 +132,79 @@ class PS3Bike(object):
 
 
         
-        self.in_xmb = multiprocessing.Value('b',True)
         self.speed_calibration = multiprocessing.Value('i')
         self.speed_offset = multiprocessing.Value('i')
         self.speed_calibration.value = DEFAULT_SPEED_CALIBRATION
         self.speed_offset.value = DEFAULT_SPEED_OFFSET
 
+        self.load_settings()
+       
+
         self.compass = None
         self.forwards = None
+        try:
+            self.crew_telemetry_socket = socket.socket(socket.AF_INET, # Internet
+                          socket.SOCK_DGRAM) # UDP
+            self.crew_telemetry_socket.setblocking(0)
+
+            self.crew_telemetry_socket.bind((CREW_TELEMETRY_IP, CREW_TELEMETRY_PORT))
+            logging.info("Opened The Crew telemetry socket")
+        except Exception as e:
+            logging.info("CANNOT OPEN The Crew telemetry socket")
+            logging.info(e)
+            self.crew_telemetry_socket = None
+ 
+
 
         self._enable_sensors();
 
+    def read_crew_telemetry(self):
+        if self.crew_telemetry_socket == None:
+            return
+        try:
+          data, addr = self.crew_telemetry_socket.recvfrom(128) # buffer size is 1024 bytes
+          #print("received telemetry message: %s" % data)
+          fmt = 'IffffffffffffIIII'
+          telemetry = unpack(fmt,data)
+          telemetry = list(map( lambda x : round(x,2),telemetry))
+          b=0
+          tobj = {
+            'time': telemetry[0],
+            'angularVelocity': telemetry[1:4],
+            'orientation': telemetry[4:7],
+            'acceleration': telemetry[7:10],
+            'velocity': telemetry[10:13],
+            'position': telemetry[13:16],
+            'gameid' : telemetry[16]
+          };
+
+          self.crew_target_speed = tobj['velocity'][1] * 2.2
+          self.new_telemetry = True
+          #pprint(f"Telemetry Speed : {self.crew_target_speed}" )
+        except:
+          pass
+
     def __del__(self):
         pass
+
+    def load_settings(self):
+        #Try to load settings
+        try:
+            settingsfile = open("psbike.settings")
+            vals = settingsfile.read().split(",")
+            self.speed_calibration.value = int(vals[0])
+            self.speed_offset.value = int(vals[1])
+        except Exception as e:
+            logging.info(f"Error loading settings: {str(e)}")
+
+    def save_settings(self):
+        logging.info("Saving Settings")
+        try:
+            settingsfile = open("psbike.settings","w")
+            settingsfile.write(f"{self.speed_calibration.value},{self.speed_offset.value}")
+            settingsfile.close()
+        except Exception as e:
+            logging.info(f"Error loading settings: {str(e)}")
 
     def _read_lightsensor(self):
         data = self.bus.read_i2c_block_data(LIGHTSENSOR_DEVICE, LIGHTSENSOR_CONTINUOUS_LOW_RES_MODE)
@@ -221,10 +295,11 @@ class PS3Bike(object):
         for button in buttons:
             self.wheel_data[button[0]] |= button[1]
             self._send_data()
-            time.sleep(0.1)
+            time.sleep(0.2)
             self.wheel_data[button[0]] &= ~button[1]
             self._send_data()
-            time.sleep(0.1)
+            time.sleep(0.2)
+    
    
     def _return_to_road(self):
         #Hold Circle
@@ -242,9 +317,6 @@ class PS3Bike(object):
          
         if clicker_data :
             self.braking = False
-            if self.in_xmb.value == True:
-                self.in_xmb.value = False
-                return
 
             byte = clicker_data[cmb.CLICKER_BUTTONS]
             if byte in cmb.CLICKER_UP:
@@ -263,7 +335,13 @@ class PS3Bike(object):
         while True:
             now_time = time.time()
             clicker_data = bytearray(self.clicker.read(64))
-            bearing = self._read_compass()
+            try:
+                bearing = self._read_compass()
+                steering_angle.value = bearing - self.forwards
+            except:
+                pass
+
+            
             lightreading = self._read_lightsensor()
 
 
@@ -275,7 +353,7 @@ class PS3Bike(object):
 
             speed_mean.value=self.speedmean
 
-            steering_angle.value = bearing - self.forwards
+            
            
             if self.speedmean > 0:
                 self.speedmean = self.speedmean - 0.5
@@ -287,10 +365,7 @@ class PS3Bike(object):
                 self.wheel_data[mapping[1][0]] &= ~cmb.WHEEL_DPAD_MASK
                 self.wheel_data[mapping[1][0]] |= mapping[1][1]
 
-        if self.in_xmb.value:
-            mappings = cmb.XMB_BUTTON_MAPPINGS
-        else:
-            mappings = cmb.BUTTON_MAPPINGS
+        mappings = cmb.BUTTON_MAPPINGS
 
         for mapping in mappings:
             if self.gamepad_data[mapping[0][0]] & mapping[0][1] :
@@ -298,11 +373,12 @@ class PS3Bike(object):
         
         #Override Brake and Accelrate with L2/R2
         if self.gamepad_data[cmb.GAMEPAD_L2[0]] &  cmb.GAMEPAD_L2[1]:
-            self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0xFF -  self.gamepad_data[cmb.GAMEPAD_LTRIGGER]
+            self.wheel_data[cmb.WHEEL_BRAKEBYTE] = self.gamepad_data[cmb.GAMEPAD_LTRIGGER]
 
         
         if self.gamepad_data[cmb.GAMEPAD_R2[0]] &  cmb.GAMEPAD_R2[1]:
-            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0xFF -  self.gamepad_data[cmb.GAMEPAD_RTRIGGER]
+            print("Trigger accellerator")
+            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = self.gamepad_data[cmb.GAMEPAD_RTRIGGER]
         
 
         #Pass steering if not centred
@@ -319,10 +395,10 @@ class PS3Bike(object):
     
     def _apply_brake(self):
         if self.braking:
-            self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0x00
-            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0xFF
-        else:            
             self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0xFF
+            self.wheel_data[cmb.WHEEL_ACCELERATEBYTE] = 0x00
+        else:            
+            self.wheel_data[cmb.WHEEL_BRAKEBYTE] = 0x00
         self.braking=False
 
 
@@ -338,12 +414,13 @@ class PS3Bike(object):
         self.listener.daemon=True
         self.listener.start()
 
-        self.ui = multiprocessing.Process(target=webui.start_ui,args=(shared_speed_mean,shared_steering_angle,self.speed_offset,self.speed_calibration))
+        self.ui = multiprocessing.Process(target=webui.start_ui,args=(shared_speed_mean,shared_steering_angle,self.speed_offset,self.speed_calibration,self))
         self.ui.daemon = True
         self.ui.start()
 
         while True:
             time.sleep(0.02)
+            self.read_crew_telemetry()
             self.wheel_data = bytearray(cmb.WHEEL_NEUTRAL)
 
             loops += 1
@@ -357,7 +434,6 @@ class PS3Bike(object):
                 self.gamepad_data = latest_gamepad_data
 
 
-                #logging.info(f"Speed: {int(speed_mean.value)} Loop: {int(hz)}  Angle: {steering_angle.value} " )
                 
                 #Joystick overrides Bike for steering so use if it's neutral
                 if self.gamepad_data[cmb.GAMEPAD_LJOY_X] > 0x78 and self.gamepad_data[cmb.GAMEPAD_LJOY_X] < 0x88  :

@@ -9,8 +9,8 @@ mkdir -p xac_joystick
 cd xac_joystick
 
 # Define USB specification
-echo 0x046d > idVendor # Linux Foundation
-echo 0xc29a > idProduct # Multifunction Composite Joystick Gadget
+echo 0x0460 > idVendor # Linux Foundation
+echo 0xc290 > idProduct # Multifunction Composite Joystick Gadget
 echo 1322 > bcdDevice # v1.0.0
 echo 0x0200 > bcdUSB # USB2
 echo 0x00 > bDeviceClass
@@ -22,7 +22,7 @@ mkdir -p strings/0x409
 
 echo "0000000000" > strings/0x409/serialnumber
 echo "Sony Inc" > strings/0x409/manufacturer
-echo "Driving Force GT" > strings/0x409/product
+echo "Not a Driving Force GT" > strings/0x409/product
 
 
 # Define the functions of the device
