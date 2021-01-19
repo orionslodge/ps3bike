@@ -1,7 +1,9 @@
 # ps3bike
-A Playstation Controller which is also smart bike trainer.
+A Game Controller which is also smart bike trainer.
 
-There may be a blog to go with this but I neeed somewhere to put the code anyway. This isn't intended to just clone and use as it's quite specialised to my equipment and needs.
+See https://orionslodge.blogspot.com/
+
+Now tied into PC, Game Telemerty and providing varialbe resitatnce.
 
 I finally got not just controller emulation but the wheel too, hooray.
 
